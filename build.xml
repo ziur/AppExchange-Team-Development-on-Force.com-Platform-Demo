@@ -1,0 +1,262 @@
+<project name="Sample usage of Salesforce Ant tasks" default="deployObjects" basedir="."
+         xmlns:sf="antlib:com.salesforce">
+    <taskdef uri="antlib:com.salesforce"
+            resource="com/salesforce/antlib.xml"
+            classpath="lib/ant-salesforce.jar"/>
+
+    <property file="build.properties"/>
+    <property environment="env"/>
+    <!--<property name="q2wproject"-->
+              <!--value="/home/ale/things/projects/pros/pros/projects/salesforce/quote2win_ziur"/>-->
+    <property name="q2wproject"
+              value="/home/ale/things/projects/pros/pros/projects/salesforce/80demo/src"/>
+    <property name="src.code-pkg" value="deploy/src-code"/>
+    <property name="src.objects-pkg" value="deploy/src-objects"/>
+    <property name="src.others-pkg" value="deploy/src-others"/>
+    <property name="src.objects-pkg.objects" value="${src.objects-pkg}/objects"/>
+
+    <!-- Shows deploying code & running tests for code in directory -->
+
+    <target name="copy-others-pkg">
+        <delete>
+            <fileset dir="${src.others-pkg}/" includes="**" excludes="package.xml"/>
+        </delete>
+        <copy todir="${src.others-pkg}">
+            <!--excludes="layouts/SocialPost*.*"-->
+            <fileset dir="${q2wproject}"
+                     includes="
+applications/**, 
+campaignSharingRules/**, 
+caseSharingRules/**, 
+contactSharingRules/**, 
+email/**, 
+homePageLayouts/**, 
+layouts/**, 
+leadSharingRules/**,
+objectTranslations/**, 
+opportunitySharingRules/**, 
+permissionsets/**, 
+profiles/**, 
+roles/**, 
+tabs/**, 
+weblinks/**, 
+workflows/** 
+                     "/>
+        </copy>
+        <copy todir="${src.others-pkg}" force="true">
+            <fileset dir="${src.objects-pkg}" includes="objects/*.object"
+                     excludes="objects/Idea.object"/>
+        </copy>
+ 
+    </target>
+
+    <target name="copy-code-pkg">
+        <delete>
+            <fileset dir="${src.code-pkg}/" includes="**" excludes="package.xml"/>
+        </delete>
+        <copy todir="${src.code-pkg}">
+            <fileset dir="${q2wproject}"
+                     includes="classes/**, 
+components/**,
+documents/**,
+labels/**,
+pages/**,
+staticresources/**,
+tabs/**,
+triggers/**"/>
+        </copy>
+    </target>
+
+
+    <target name="copy-objects-pkg">
+        <delete>
+            <fileset dir="${src.objects-pkg}/" includes="**" excludes="package.xml"/>
+        </delete>
+        <copy todir="${src.objects-pkg}" force="true">
+            <fileset dir="${q2wproject}" includes="objects/*.object"
+                     excludes="objects/Idea.object"/>
+        </copy>
+    </target>
+
+    <target name="deployAll" depends="deployObjects, deployCode, deployOthers"> </target>
+
+    <target name="deployObjects"
+            depends="copy-objects-pkg, removeCascadeFromObjects, changeActionOverrides, commentWebLinksFromObjects">
+        
+        <sf:deploy username="${sf.username}" password="${sf.password}"
+                   serverurl="${sf.serverurl}" deployRoot="${src.objects-pkg}"/>
+    </target>
+
+
+
+    <target name="deployCode"
+            depends="copy-code-pkg">
+        <!-- Upload the contents of the "codepkg" directory, running the tests for just 1 class -->
+        <sf:deploy username="${sf.username}" password="${sf.password}"
+                   serverurl="${sf.serverurl}" deployRoot="${src.code-pkg}"/>
+    </target>
+
+    <target name="deployOthers"
+            depends="uncommentWebLinksFromObjects, copy-others-pkg, remove_social_post_from_profiles, delete_social_post_files">
+        <!-- Upload the contents of the "codepkg" directory, running the tests for just 1 class -->
+        <sf:deploy username="${sf.username}" password="${sf.password}"
+                   serverurl="${sf.serverurl}" deployRoot="${src.others-pkg}"/>
+    </target>
+
+    <target name="removeCascadeFromObjects">
+        <replace dir="${src.objects-pkg.objects}" includes="${q2w.remove.cascade.from.objects}">
+            <replacetoken><![CDATA[<deleteConstraint>Cascade</deleteConstraint>]]></replacetoken>
+            <replacevalue><![CDATA[<deleteConstraint>SetNull</deleteConstraint>]]></replacevalue>
+        </replace>
+    </target>
+
+    <target name="commentWebLinksFromObjects">
+        <replace dir="${src.objects-pkg.objects}" includes="*.object">
+            <replacefilter>
+                <replacetoken><![CDATA[<webLinks>]]></replacetoken>
+                <replacevalue><![CDATA[<!-- *
+                <webLinks>]]></replacevalue>
+            </replacefilter>
+            <replacefilter>
+                <replacetoken><![CDATA[</webLinks>]]></replacetoken>
+                <replacevalue><![CDATA[</webLinks>
+                * -->]]></replacevalue>
+            </replacefilter>
+        </replace>
+
+    </target>
+
+    <target name="uncommentWebLinksFromObjects">
+        <replace dir="${src.objects-pkg.objects}" includes="*.object">
+            <replacefilter>
+                <replacetoken><![CDATA[<!-- *]]></replacetoken>
+                <replacevalue><![CDATA[]]></replacevalue>
+            </replacefilter>
+            <replacefilter>
+                <replacetoken><![CDATA[* -->]]></replacetoken>
+                <replacevalue><![CDATA[]]></replacevalue>
+            </replacefilter>
+        </replace>
+
+    </target>
+
+
+
+    <target name="changeActionOverrides">
+        <replaceregexp flags="g" >
+            <regexp pattern="\&lt;actionOverrides\&gt;\s*\&lt;actionName\&gt;(\w*)\&lt;/actionName\&gt;\s*.*\s*.*\s*\&lt;type\&gt;Visualforce\&lt;/type\&gt;"/>
+            <substitution expression="\&lt;actionOverrides\&gt;
+        \&lt;actionName\&gt;\1\&lt;/actionName\&gt;
+        \&lt;type\&gt;default\&lt;/type\&gt;"/>
+            <fileset dir="${src.objects-pkg.objects}">
+                <include name="*.object"/>
+            </fileset>
+        </replaceregexp>
+    </target>
+
+    <target name="remove_social_post_from_profiles" >
+        <echo message="updating profiles to remove Social-Post references in ${src.others-pkg}..."
+                />
+        <replaceregexp match="^    &lt;layoutAssignments&gt;\n        &lt;layout&gt;SocialPost-Social Post Layout&lt;/layout&gt;\n    &lt;/layoutAssignments&gt;$" replace="" flags="gm" byline="false">
+            <fileset dir="${src.others-pkg}\profiles" includes="**/*.profile" />
+        </replaceregexp>
+    </target>
+
+    <target name="delete_social_post_files" depends="remove_social_post_from_profiles">
+        <echo message="deleting Social-Post related files from ${src.others-pkg}..." />
+        <delete file="${src.others-pkg}\workflows\SocialPost.workflow"/>
+        <delete file="${src.others-pkg}\layouts\SocialPost-Social Post Layout.layout"/>
+    </target>
+
+    <!-- Test out deploy and retrieve verbs for package 'mypkg' -->
+    <target name="test">
+        <!-- Upload the contents of the "mypkg" package -->
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="mypkg"/>
+        <mkdir dir="retrieveOutput"/>
+        <!-- Retrieve the contents into another directory -->
+        <sf:retrieve username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                     retrieveTarget="retrieveOutput" packageNames="MyPkg"/>
+    </target>
+
+    <!-- Retrieve an unpackaged set of metadata from your org -->
+    <!-- The file unpackaged/package.xml lists what is to be retrieved -->
+    <target name="retrieveUnpackaged">
+        <mkdir dir="retrieveUnpackaged"/>
+        <!-- Retrieve the contents into another directory -->
+        <sf:retrieve username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                     retrieveTarget="retrieveUnpackaged" unpackaged="unpackaged/package.xml"/>
+    </target>
+
+    <!-- Retrieve all the items of a particular metadata type -->
+    <target name="bulkRetrieve">
+        <sf:bulkRetrieve username="${sf.username}" password="${sf.password}"
+                         serverurl="${sf.serverurl}" metadataType="${sf.metadataType}"
+                         retrieveTarget="retrieveUnpackaged"/>
+    </target>
+
+    <!-- Retrieve metadata for all the packages specified under packageNames -->
+    <target name="retrievePkg">
+        <sf:retrieve username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                     retrieveTarget="retrieveOutput" packageNames="${sf.pkgName}"/>
+    </target>
+
+    <!-- Deploy the unpackaged set of metadata retrieved with retrieveUnpackaged -->
+    <target name="deployUnpackaged">
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="retrieveUnpackaged"/>
+    </target>
+
+    <!-- Deploy a zip of metadata files to the org -->
+    <target name="deployZip">
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   zipFile="${sf.zipFile}" pollWaitMillis="1000"/>
+    </target>
+
+    <!-- Shows deploying code & running tests for code in directory -->
+    <target name="deployCode1">
+        <!-- Upload the contents of the "codepkg" directory, running the tests for just 1 class -->
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="codepkg">
+            <runTest>SampleDeployClass</runTest>
+        </sf:deploy>
+    </target>
+
+    <!-- Shows removing code; only succeeds if done after deployCode -->
+    <target name="undeployCode">
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="removecodepkg"/>
+    </target>
+
+    <!-- Shows retrieving code; only succeeds if done after deployCode -->
+    <target name="retrieveCode">
+        <!-- Retrieve the contents listed in the file codepkg/package.xml into the codepkg directory -->
+        <sf:retrieve username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                     retrieveTarget="codepkg" unpackaged="codepkg/package.xml"/>
+    </target>
+
+    <!-- Shows deploying code, running all tests, and running tests (1 of which fails), and logging. -->
+    <target name="deployCodeFailingTest">
+        <!-- Upload the contents of the "codepkg" package, running all tests -->
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="codepkg" runAllTests="true" logType="Debugonly"/>
+    </target>
+
+    <!-- Shows check only; never actually saves to the server -->
+    <target name="deployCodeCheckOnly">
+        <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
+                   deployRoot="codepkg" checkOnly="true"/>
+    </target>
+
+    <!-- Retrieve the information of all items of a particular metadata type -->
+    <target name="listMetadata">
+        <sf:listMetadata username="${sf.username}" password="${sf.password}"
+                         serverurl="${sf.serverurl}" metadataType="${sf.metadataType}"/>
+    </target>
+
+    <!-- Retrieve the information on all supported metadata type -->
+    <target name="describeMetadata">
+        <sf:describeMetadata username="${sf.username}" password="${sf.password}"
+                             serverurl="${sf.serverurl}"/>
+    </target>
+</project>
