@@ -217,7 +217,7 @@ triggers/**"/>
     <target name="deployApp">
         <!-- Upload the contents of the "codepkg" directory, running the tests for just 1 class -->
         <sf:deploy username="${sf.username}" password="${sf.password}" serverurl="${sf.serverurl}"
-                   deployRoot="${q2wproject}" runAllTests="true" logType="Debugonly">
+                   deployRoot="${q2wproject}" > <!-- runAllTests="true" logType="Debugonly" -->
         </sf:deploy>
     </target>
 
